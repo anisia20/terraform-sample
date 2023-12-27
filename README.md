@@ -10,6 +10,7 @@ docker-compose run --rm tf apply -var "region=ap-northeast-2" -var "access_key=K
 ```
 
 ## EKS
+1. create keypair ex) eks-bastion.pem
 ```sh
 docker-compose run --rm tf workspace new eks
 docker-compose run --rm tf workspace list
