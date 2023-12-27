@@ -42,3 +42,40 @@ resource "aws_security_group_rule" "eks_node_add_access" {
   protocol          = "-1"
   cidr_blocks       = ["10.0.0.0/16"]
 }
+
+resource "aws_security_group" "themore-bastion-sg" {
+  name = "themore-bastion"
+  vpc_id = aws_vpc.themore-vpc.id
+
+  ingress {
+    from_port = 22
+    protocol = "tcp"
+    to_port = 22
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  egress {
+    from_port = 0
+    protocol = "-1"
+    to_port = 0
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    "Name" = "themore-EKS-bastion-sg"
+  }
+}
+
+resource "aws_instance" "themore-bastion" {
+  ami = "ami-027ce4ce0590e3c98"
+  instance_type = "t2.micro"
+  subnet_id = aws_subnet.public-c.id
+  key_name = "themore-bastion"
+  vpc_security_group_ids = [
+    aws_security_group.themore-bastion-sg.id
+  ]
+
+  tags = {
+    "Name" = "themore-EKS-bastionHost"
+  }
+}
