@@ -81,36 +81,42 @@ spec:
 
 5. AWS Load Balancer Controller 세팅
 | WAF등의 AWS 서비스를 이용하기 위함
+https://potato-yong.tistory.com/147
 
 ```sh
 curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
 sudo mv /tmp/eksctl /usr/local/bin
 eksctl version
 
+eksctl utils associate-iam-oidc-provider \
+    --region ap-northeast-2 \
+    --cluster themore-cluster \
+    --approve
+
 eksctl create iamserviceaccount \
   --cluster=themore-cluster \
   --namespace=kube-system \
   --name=aws-load-balancer-controller \
-  --attach-policy-arn=arn:aws:iam::123123:policy/AWSLoadBalancerControllerIAMPolicy \
+  --attach-policy-arn=arn:aws:iam::776525613317:policy/AWSLoadBalancerControllerIAMPolicy \
   --override-existing-serviceaccounts \
   --approve
 
-curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-chmod 700 get_helm.sh
-./get_helm.sh
-echo 'source <(helm completion bash)' >> ~/.bashrc
-source <(helm completion bash)
-chmod 600 ~/.kube/config
-helm repo add eks https://aws.github.io/eks-charts
-helm repo update
+kubectl apply --validate=false -f https://github.com/jetstack/cert-manager/releases/download/v1.4.1/cert-manager.yaml
 
+wget https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.2.1/docs/install/v2_2_1_full.yaml
 
-helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
-  -n kube-system \
-  --set clusterName=themore-cluster \
-  --set serviceAccount.create=false \
-  --set serviceAccount.name=aws-load-balancer-controller \
-  --set image.repository=602401143452.dkr.ecr.ap-northeast-2.amazonaws.com/amazon/aws-load-balancer-controller
+##### 내용 수정
+    spec:
+      containers:
+      - args:
+        - --cluster-name=eks # Your cluster name
+        - --ingress-class=alb   # ingress에 사용할 loadbalancer 정의 
+        - --aws-vpc-id=vpc-123123  # Your VPC ID
+        - --aws-region=ap-northeast-2   # Your Region
+        image: amazon/aws-alb-ingress-controller:v2.2.1
+#####
+kubectl apply -f v2_2_1_full.yaml
+
 ```
 
 6. istio 설정 변경
@@ -145,7 +151,7 @@ spec:
           type: NodePort # ingress gateway 의 NodePort 사용
         serviceAnnotations:  # Health check 관련 정보
           alb.ingress.kubernetes.io/healthcheck-path: /healthz/ready
-          alb.ingress.kubernetes.io/healthcheck-port: "30566" # 위에서 얻은 port number를 사용
+          alb.ingress.kubernetes.io/healthcheck-port: "32097" # 위에서 얻은 port number를 사용
     pilot:
       enabled: true
       k8s:
@@ -162,11 +168,20 @@ spec:
 
 7. ALB생성
 ```sh
-
+kubectl apply -f alb-ingress-class.yaml
+kubectl apply -f alb-ingress.yaml
+```
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: alb
+spec:
+  controller: ingress.k8s.aws/alb
 ```
 
 ```yaml
-apiVersion: extensions/v1beta1
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: ingress-alb
@@ -174,18 +189,26 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-northeast-2:131231231~~~~"
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-northeast-2:776525613317:certificate/123123"
     alb.ingress.kubernetes.io/actions.ssl-redirect: '{"Type": "redirect", "RedirectConfig": { "Protocol": "HTTPS", "Port": "443", "StatusCode": "HTTP_301"}}'
 spec:
+  ingressClassName: alb
   rules:
-  - http:
-      paths:
-        - path: /*
-          backend:
-            serviceName: ssl-redirect
-            servicePort: use-annotation
-        - path: /*
-          backend:
-            serviceName: istio-ingressgateway
-            servicePort: 80
+    - http:
+        paths:
+          - path: /*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: ssl-redirect
+                port:
+                  name: use-annotation
+          - path: /*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: istio-ingressgateway
+                port:
+                  number: 80              
+
 ```
